@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# hitl — stamp the method into a project, and drive it.
+#
+#   hitl init [solo|build|client]   scaffold this repo (additive, never overwrites)
+#   hitl packet <NN> <name>         create a new slice packet from the template
+#   hitl slice <NN>                 set the active packet (drives the pre-commit gate)
+#   hitl status                     show what the agent sees at session start
+#
+# Tiering is by stakes, not size. See METHOD.md.
+
+set -uo pipefail
+
+HITL_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'; BLD=$'\033[1m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+
+die() { echo "${RED}✗ $*${OFF}" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+root() { git rev-parse --show-toplevel 2>/dev/null; }
+
+# Copy only if absent. Never clobber — re-running init on a live project is
+# supposed to be safe, otherwise nobody re-runs it.
+place() {
+  local src="$1" dst="$2"
+  if [ -e "$dst" ]; then
+    echo "  ${DIM}skip   ${dst#$ROOT/}${OFF} ${DIM}(exists)${OFF}"
+  else
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    echo "  ${GRN}create${OFF} ${dst#$ROOT/}"
+  fi
+}
+
+cmd_init() {
+  local tier="${1:-build}"
+  case "$tier" in solo|build|client) ;; *) die "unknown tier '$tier' (solo|build|client)" ;; esac
+
+  ROOT="$(root)" || die "not a git repository — run 'git init' first"
+  local name; name="$(basename "$ROOT")"
+
+  echo
+  echo "${BLD}hitl init — tier ${tier}${OFF}  ${DIM}$ROOT${OFF}"
+  echo
+
+  # --- every tier: the contract ---
+  if [ ! -e "$ROOT/AGENTS.md" ]; then
+    sed "s/{{PROJECT}}/$name/g" "$HITL_HOME/templates/AGENTS.md.tmpl" > "$ROOT/AGENTS.md"
+    echo "  ${GRN}create${OFF} AGENTS.md ${DIM}(fill in the placeholders — by hand)${OFF}"
+  else
+    echo "  ${DIM}skip   AGENTS.md (exists)${OFF}"
+  fi
+
+  # Claude Code still does not read AGENTS.md natively (verified Aug 2026).
+  if [ ! -e "$ROOT/CLAUDE.md" ]; then
+    printf '@AGENTS.md\n' > "$ROOT/CLAUDE.md"
+    echo "  ${GRN}create${OFF} CLAUDE.md ${DIM}(one line: @AGENTS.md)${OFF}"
+  else
+    grep -q 'AGENTS.md' "$ROOT/CLAUDE.md" \
+      || echo "  ${YEL}warn   CLAUDE.md exists and does not import AGENTS.md${OFF}"
+  fi
+
+  if [ "$tier" = solo ]; then
+    echo
+    echo "${GRN}Done.${OFF} Fill in AGENTS.md. That is the whole tier."
+    return
+  fi
+
+  # --- build + client: the method in-repo ---
+  place "$HITL_HOME/templates/packet.md.tmpl"  "$ROOT/docs/method/packet-template.md"
+  [ -e "$ROOT/docs/method/decision-log.md" ] || {
+    sed "s/{{PROJECT}}/$name/g" "$HITL_HOME/templates/decision-log.md.tmpl" \
+      > "$ROOT/docs/method/decision-log.md"
+    echo "  ${GRN}create${OFF} docs/method/decision-log.md"
+  }
+  mkdir -p "$ROOT/docs/method/packets" "$ROOT/docs/method/source"
+  [ -e "$ROOT/docs/method/source/README.md" ] || {
+    cat > "$ROOT/docs/method/source/README.md" <<'EOF'
+# Source extracts
+
+Facts the work depends on, in their rawest available form — price lists,
+spreadsheets, spec excerpts, API responses.
+
+An agent that needs a number reads it here instead of recalling it. This is the
+cheapest anti-hallucination measure available. Keep the original formatting;
+do not summarise into prose.
+EOF
+    echo "  ${GRN}create${OFF} docs/method/source/README.md"
+  }
+
+  # SessionStart hook — derived state, so it cannot go stale.
+  mkdir -p "$ROOT/.hitl"
+  place "$HITL_HOME/hooks/session-start.sh" "$ROOT/.hitl/session-start.sh"
+  chmod +x "$ROOT/.hitl/session-start.sh" 2>/dev/null || true
+  install_session_hook "$ROOT"
+
+  if [ ! -e "$ROOT/.hitl/state.md" ]; then
+    cat > "$ROOT/.hitl/state.md" <<'EOF'
+<!-- ONLY what no command can derive. If git or gh can compute it, delete it. -->
+
+## File ownership right now
+- (none)
+
+## Blocked on someone else
+- (none)
+EOF
+    echo "  ${GRN}create${OFF} .hitl/state.md"
+  fi
+  grep -qs '^\.hitl/active-packet$' "$ROOT/.gitignore" 2>/dev/null \
+    || { printf '\n.hitl/active-packet\n' >> "$ROOT/.gitignore"; echo "  ${GRN}update${OFF} .gitignore"; }
+
+  if [ "$tier" = build ]; then
+    echo
+    echo "${GRN}Done.${OFF} Next: fill in AGENTS.md, then ${BLD}hitl packet 01 <name>${OFF}"
+    return
+  fi
+
+  # --- client only: verification trail + the gate ---
+  place "$HITL_HOME/templates/handoff-protocol.md" "$ROOT/docs/method/handoff-protocol.md"
+  mkdir -p "$ROOT/docs/method/handoffs"
+  place "$HITL_HOME/hooks/allowed-files.sh" "$ROOT/.hitl/allowed-files.sh"
+  chmod +x "$ROOT/.hitl/allowed-files.sh" 2>/dev/null || true
+
+  local hook="$ROOT/.git/hooks/pre-commit"
+  if [ -e "$hook" ] && grep -q 'hitl' "$hook" 2>/dev/null; then
+    echo "  ${DIM}skip   .git/hooks/pre-commit (gate installed)${OFF}"
+  elif [ -e "$hook" ]; then
+    echo "  ${YEL}warn   .git/hooks/pre-commit exists — add manually:${OFF}"
+    echo "         ${DIM}exec \"\$(git rev-parse --show-toplevel)/.hitl/allowed-files.sh\"${OFF}"
+  else
+    printf '#!/usr/bin/env bash\nexec "$(git rev-parse --show-toplevel)/.hitl/allowed-files.sh"\n' > "$hook"
+    chmod +x "$hook"
+    echo "  ${GRN}create${OFF} .git/hooks/pre-commit ${DIM}(allowed-files gate)${OFF}"
+  fi
+
+  echo
+  echo "${GRN}Done.${OFF} Client tier: handoffs are files, not just PR comments."
+  echo "${DIM}Remotes disappear. Files in the repo do not.${OFF}"
+}
+
+install_session_hook() {
+  local root="$1" settings="$1/.claude/settings.json"
+  mkdir -p "$root/.claude"
+  local cmd='"$CLAUDE_PROJECT_DIR"/.hitl/session-start.sh'
+  if [ ! -f "$settings" ]; then
+    cat > "$settings" <<EOF
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "$cmd" } ] }
+    ]
+  }
+}
+EOF
+    echo "  ${GRN}create${OFF} .claude/settings.json ${DIM}(SessionStart hook)${OFF}"
+  elif grep -q 'session-start.sh' "$settings"; then
+    echo "  ${DIM}skip   .claude/settings.json (hook present)${OFF}"
+  elif have jq; then
+    jq --arg c "$cmd" \
+      '.hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks:[{type:"command",command:$c}]}])' \
+      "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
+    echo "  ${GRN}update${OFF} .claude/settings.json ${DIM}(SessionStart hook added)${OFF}"
+  else
+    echo "  ${YEL}warn   .claude/settings.json exists, jq not installed — add SessionStart manually:${OFF}"
+    echo "         ${DIM}$cmd${OFF}"
+  fi
+}
+
+cmd_packet() {
+  local nn="${1:-}" name="${2:-}"
+  [ -n "$nn" ] && [ -n "$name" ] || die "usage: hitl packet <NN> <name>"
+  ROOT="$(root)" || die "not a git repository"
+  local slug; slug="$(printf '%s' "$name" | tr '[:upper:] ' '[:lower:]-' | tr -cd '[:alnum:]-')"
+  local out="$ROOT/docs/method/packets/${nn}-${slug}.md"
+  [ -e "$out" ] && die "already exists: ${out#$ROOT/}"
+  mkdir -p "$(dirname "$out")"
+  sed -e "s/{{NN}}/$nn/g" -e "s/{{slice name}}/$name/g" \
+    "$HITL_HOME/templates/packet.md.tmpl" > "$out"
+  echo "${GRN}✓${OFF} ${out#$ROOT/}"
+  echo "${DIM}Write it by hand. Fill 'Files allowed to change' before you start —${OFF}"
+  echo "${DIM}that list is the gate, and writing it is how you notice the slice is too big.${OFF}"
+  echo
+  echo "Then: ${BLD}hitl slice $nn${OFF}"
+}
+
+cmd_slice() {
+  local nn="${1:-}"
+  [ -n "$nn" ] || die "usage: hitl slice <NN>"
+  ROOT="$(root)" || die "not a git repository"
+  local match
+  match="$(find "$ROOT/docs/method/packets" -maxdepth 1 -name "${nn}-*.md" 2>/dev/null | head -1)"
+  [ -n "$match" ] || die "no packet found for '$nn' — create one with: hitl packet $nn <name>"
+  mkdir -p "$ROOT/.hitl"
+  basename "$match" > "$ROOT/.hitl/active-packet"
+  echo "${GRN}✓${OFF} active packet: ${BLD}$(basename "$match")${OFF}"
+  local n; n="$(awk '/^##[[:space:]]+Files allowed to change/{s=1;next} s&&/^##[[:space:]]/{exit} s&&/^```/{f=!f;next} s&&f&&NF&&!/^{{/{c++} END{print c+0}' "$match")"
+  if [ "$n" -eq 0 ]; then
+    echo "${YEL}⚠${OFF} packet has no allowed-files list — the gate will not apply."
+  else
+    echo "${DIM}gate active: $n path(s) allowed${OFF}"
+  fi
+}
+
+cmd_status() {
+  ROOT="$(root)" || die "not a git repository"
+  [ -x "$ROOT/.hitl/session-start.sh" ] \
+    || die "no session-start hook here — run: hitl init"
+  "$ROOT/.hitl/session-start.sh"
+}
+
+case "${1:-}" in
+  init)   shift; cmd_init "$@" ;;
+  packet) shift; cmd_packet "$@" ;;
+  slice)  shift; cmd_slice "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  ""|-h|--help|help)
+    sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$1' — try: hitl help" ;;
+esac
