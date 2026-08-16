@@ -41,8 +41,8 @@ experiment does not.
 | `AGENTS.md` + `CLAUDE.md` | ● | ● | ● |
 | decision log, packets, source extracts | | ● | ● |
 | SessionStart context injection | | ● | ● |
+| allowed-files pre-commit gate | | ● | ● |
 | handoff + verifier protocol | | | ● |
-| allowed-files pre-commit gate | | | ● |
 
 Upgrading is just re-running: `hitl init client` on a `build` project adds the
 missing pieces and touches nothing else.

@@ -112,19 +112,30 @@ EOF
   grep -qs '^\.hitl/active-packet$' "$ROOT/.gitignore" 2>/dev/null \
     || { printf '\n.hitl/active-packet\n' >> "$ROOT/.gitignore"; echo "  ${GRN}update${OFF} .gitignore"; }
 
+  # The gate belongs here, not at client tier. It is what makes a packet mean
+  # anything — and a research slice ("touch only this document") needs it at
+  # every tier, not just when someone is paying.
+  place "$HITL_HOME/hooks/allowed-files.sh" "$ROOT/.hitl/allowed-files.sh"
+  chmod +x "$ROOT/.hitl/allowed-files.sh" 2>/dev/null || true
+  install_precommit "$ROOT"
+
   if [ "$tier" = build ]; then
     echo
     echo "${GRN}Done.${OFF} Next: fill in AGENTS.md, then ${BLD}hitl packet 01 <name>${OFF}"
     return
   fi
 
-  # --- client only: verification trail + the gate ---
+  # --- client only: the verification trail someone else will read ---
   place "$HITL_HOME/templates/handoff-protocol.md" "$ROOT/docs/method/handoff-protocol.md"
   mkdir -p "$ROOT/docs/method/handoffs"
-  place "$HITL_HOME/hooks/allowed-files.sh" "$ROOT/.hitl/allowed-files.sh"
-  chmod +x "$ROOT/.hitl/allowed-files.sh" 2>/dev/null || true
 
-  local hook="$ROOT/.git/hooks/pre-commit"
+  echo
+  echo "${GRN}Done.${OFF} Client tier: handoffs are files, not just PR comments."
+  echo "${DIM}Remotes disappear. Files in the repo do not.${OFF}"
+}
+
+install_precommit() {
+  local hook="$1/.git/hooks/pre-commit"
   if [ -e "$hook" ] && grep -q 'hitl' "$hook" 2>/dev/null; then
     echo "  ${DIM}skip   .git/hooks/pre-commit (gate installed)${OFF}"
   elif [ -e "$hook" ]; then
@@ -135,10 +146,6 @@ EOF
     chmod +x "$hook"
     echo "  ${GRN}create${OFF} .git/hooks/pre-commit ${DIM}(allowed-files gate)${OFF}"
   fi
-
-  echo
-  echo "${GRN}Done.${OFF} Client tier: handoffs are files, not just PR comments."
-  echo "${DIM}Remotes disappear. Files in the repo do not.${OFF}"
 }
 
 install_session_hook() {
