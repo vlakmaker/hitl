@@ -143,17 +143,22 @@ EOF
 install_session_hook() {
   local root="$1" settings="$1/.claude/settings.json"
   mkdir -p "$root/.claude"
-  local cmd='"$CLAUDE_PROJECT_DIR"/.hitl/session-start.sh'
+  # Raw form for jq (which does its own escaping); pre-escaped form for the
+  # heredoc, where the inner quotes must survive into the JSON string.
+  local cmd='"$CLAUDE_PROJECT_DIR/.hitl/session-start.sh"'
+  local cmd_json='\"$CLAUDE_PROJECT_DIR/.hitl/session-start.sh\"'
   if [ ! -f "$settings" ]; then
     cat > "$settings" <<EOF
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "$cmd" } ] }
+      { "hooks": [ { "type": "command", "command": "$cmd_json" } ] }
     ]
   }
 }
 EOF
+    python3 -c "import json,sys;json.load(open('$settings'))" 2>/dev/null \
+      || echo "  ${RED}✗ generated .claude/settings.json is not valid JSON${OFF}"
     echo "  ${GRN}create${OFF} .claude/settings.json ${DIM}(SessionStart hook)${OFF}"
   elif grep -q 'session-start.sh' "$settings"; then
     echo "  ${DIM}skip   .claude/settings.json (hook present)${OFF}"
