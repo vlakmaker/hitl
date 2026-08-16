@@ -5,6 +5,7 @@
 #   hitl packet <NN> <name>         create a new slice packet from the template
 #   hitl slice <NN>                 set the active packet (drives the pre-commit gate)
 #   hitl status                     show what the agent sees at session start
+#   hitl update                     refresh this repo's hooks from ~/framework
 #
 # Tiering is by stakes, not size. See METHOD.md.
 
@@ -238,6 +239,91 @@ cmd_slice() {
   fi
 }
 
+cmd_update() {
+  local dry=0 templates=0
+  for a in "$@"; do
+    case "$a" in
+      -n|--dry-run) dry=1 ;;
+      --templates)  templates=1 ;;
+      *) die "unknown flag '$a' (use --dry-run, --templates)" ;;
+    esac
+  done
+  ROOT="$(root)" || die "not a git repository"
+  [ -d "$ROOT/.hitl" ] || die "this repo has no .hitl/ — run: hitl init"
+
+  echo
+  echo "${BLD}hitl update${OFF}  ${DIM}$ROOT${OFF}"
+  [ "$dry" -eq 1 ] && echo "${DIM}dry run — nothing will be written${OFF}"
+  local src ver; ver="$(git -C "$HITL_HOME" log -1 --format='%h %s' 2>/dev/null)"
+  [ -n "$ver" ] && echo "${DIM}from $HITL_HOME @ $ver${OFF}"
+  echo
+
+  local changed=0
+
+  # Machinery: overwritten. These are executable behaviour, not your content.
+  refresh() {
+    local from="$1" to="$2"
+    [ -e "$to" ] || { echo "  ${DIM}n/a    ${to#$ROOT/}${OFF} ${DIM}(not in this tier)${OFF}"; return; }
+    if cmp -s "$from" "$to"; then
+      echo "  ${DIM}same   ${to#$ROOT/}${OFF}"
+    else
+      changed=$((changed+1))
+      if [ "$dry" -eq 1 ]; then
+        echo "  ${YEL}would update${OFF} ${to#$ROOT/}"
+      else
+        cp "$from" "$to"; chmod +x "$to" 2>/dev/null || true
+        echo "  ${GRN}updated${OFF} ${to#$ROOT/}"
+      fi
+    fi
+  }
+  refresh "$HITL_HOME/hooks/session-start.sh" "$ROOT/.hitl/session-start.sh"
+  refresh "$HITL_HOME/hooks/allowed-files.sh" "$ROOT/.hitl/allowed-files.sh"
+
+  # Content templates: reported, never silently replaced — you may have edited them.
+  drift() {
+    local from="$1" to="$2"
+    [ -e "$to" ] || return
+    cmp -s "$from" "$to" && { echo "  ${DIM}same   ${to#$ROOT/}${OFF}"; return; }
+    if [ "$templates" -eq 1 ] && [ "$dry" -eq 0 ]; then
+      cp "$from" "$to"; changed=$((changed+1))
+      echo "  ${GRN}updated${OFF} ${to#$ROOT/} ${DIM}(--templates)${OFF}"
+    else
+      echo "  ${YEL}drift  ${OFF}${to#$ROOT/} ${DIM}(differs; --templates to replace)${OFF}"
+    fi
+  }
+  drift "$HITL_HOME/templates/packet.md.tmpl"       "$ROOT/docs/method/packet-template.md"
+  drift "$HITL_HOME/templates/handoff-protocol.md"  "$ROOT/docs/method/handoff-protocol.md"
+
+  # Repair the hook wiring — it has been silently broken before.
+  local settings="$ROOT/.claude/settings.json"
+  if [ -f "$settings" ]; then
+    if ! python3 -c "import json;json.load(open('$settings'))" 2>/dev/null; then
+      echo "  ${RED}broken ${OFF}.claude/settings.json is not valid JSON"
+      changed=$((changed+1))
+      if [ "$dry" -eq 0 ]; then
+        cp "$settings" "$settings.broken"
+        rm -f "$settings"; install_session_hook "$ROOT"
+        echo "         ${DIM}old file kept as settings.json.broken${OFF}"
+      fi
+    elif ! grep -q 'session-start.sh' "$settings"; then
+      echo "  ${YEL}missing${OFF} SessionStart hook in .claude/settings.json"
+      changed=$((changed+1))
+      [ "$dry" -eq 0 ] && install_session_hook "$ROOT"
+    else
+      echo "  ${DIM}same   .claude/settings.json${OFF}"
+    fi
+  fi
+
+  echo
+  if [ "$changed" -eq 0 ]; then
+    echo "${GRN}Up to date.${OFF}"
+  elif [ "$dry" -eq 1 ]; then
+    echo "${YEL}$changed file(s) would change.${OFF} Re-run without --dry-run."
+  else
+    echo "${GRN}$changed file(s) updated.${OFF} ${DIM}Review the diff before committing.${OFF}"
+  fi
+}
+
 cmd_status() {
   ROOT="$(root)" || die "not a git repository"
   [ -x "$ROOT/.hitl/session-start.sh" ] \
@@ -250,7 +336,8 @@ case "${1:-}" in
   packet) shift; cmd_packet "$@" ;;
   slice)  shift; cmd_slice "$@" ;;
   status) shift; cmd_status "$@" ;;
+  update) shift; cmd_update "$@" ;;
   ""|-h|--help|help)
-    sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+    awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$HITL_SELF" ;;
   *) die "unknown command '$1' — try: hitl help" ;;
 esac
