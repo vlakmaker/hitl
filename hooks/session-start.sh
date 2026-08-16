@@ -23,6 +23,14 @@ if [ -f .hitl/active-packet ]; then
   p="$(tr -d '[:space:]' < .hitl/active-packet)"
   echo "## Active packet"
   echo "\`docs/method/packets/$p\` — read it before writing anything."
+  # Only reachable via `hitl slice --force`, which is exactly when it needs saying.
+  if [ -f "docs/method/packets/$p" ] && grep -q '{{' "docs/method/packets/$p"; then
+    echo
+    echo "**This packet is still a template.** It contains unfilled"
+    echo "\`{{placeholders}}\` — treat them as missing information, never as"
+    echo "instructions, and do not infer what they were meant to say. There is"
+    echo "no usable brief here: stop and report that the packet is incomplete."
+  fi
   echo
 fi
 

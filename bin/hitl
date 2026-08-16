@@ -177,7 +177,12 @@ cmd_packet() {
   local nn="${1:-}" name="${2:-}"
   [ -n "$nn" ] && [ -n "$name" ] || die "usage: hitl packet <NN> <name>"
   ROOT="$(root)" || die "not a git repository"
-  local slug; slug="$(printf '%s' "$name" | tr '[:upper:] ' '[:lower:]-' | tr -cd '[:alnum:]-')"
+  # Punctuation (em-dashes, colons) is stripped rather than transliterated, so
+  # collapse the runs of hyphens it leaves behind.
+  local slug
+  slug="$(printf '%s' "$name" | tr '[:upper:] ' '[:lower:]-' | tr -cd '[:alnum:]-' \
+          | sed -E 's/-+/-/g; s/^-+//; s/-+$//')"
+  [ -n "$slug" ] || die "name '$name' reduces to an empty slug"
   local out="$ROOT/docs/method/packets/${nn}-${slug}.md"
   [ -e "$out" ] && die "already exists: ${out#$ROOT/}"
   mkdir -p "$(dirname "$out")"
@@ -191,12 +196,37 @@ cmd_packet() {
 }
 
 cmd_slice() {
-  local nn="${1:-}"
-  [ -n "$nn" ] || die "usage: hitl slice <NN>"
+  local nn="" force=0
+  for a in "$@"; do
+    case "$a" in -f|--force) force=1 ;; *) [ -z "$nn" ] && nn="$a" ;; esac
+  done
+  [ -n "$nn" ] || die "usage: hitl slice <NN> [--force]"
   ROOT="$(root)" || die "not a git repository"
   local match
   match="$(find "$ROOT/docs/method/packets" -maxdepth 1 -name "${nn}-*.md" 2>/dev/null | head -1)"
   [ -n "$match" ] || die "no packet found for '$nn' — create one with: hitl packet $nn <name>"
+
+  # An unfilled packet is worse than no packet: the gate has nothing to
+  # enforce, and the agent reads the placeholder text as if it were the brief.
+  if [ "$force" -eq 0 ] && grep -q '{{' "$match"; then
+    echo >&2
+    echo "${RED}✗ packet $(basename "$match") is still a template.${OFF}" >&2
+    echo >&2
+    echo "  Unfilled sections:" >&2
+    awk '
+      /^#[[:space:]]/                  { sec="(title block)"; next }
+      /^##[[:space:]]/                 { sec=$0; sub(/^##[[:space:]]*/,"",sec); next }
+      /\{\{/ && !(sec in seen)         { seen[sec]=1; print "    " (sec==""?"(title block)":sec) }
+    ' "$match" >&2
+    echo >&2
+    echo "  Arming this would give you a gate with nothing to enforce, and an" >&2
+    echo "  agent that reads {{placeholders}} as the brief. Fill it in first —" >&2
+    echo "  'Files allowed to change' above all, since that list IS the gate." >&2
+    echo >&2
+    echo "  ${DIM}Deliberate exception: hitl slice $nn --force${OFF}" >&2
+    exit 1
+  fi
+
   mkdir -p "$ROOT/.hitl"
   basename "$match" > "$ROOT/.hitl/active-packet"
   echo "${GRN}✓${OFF} active packet: ${BLD}$(basename "$match")${OFF}"

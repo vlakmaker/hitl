@@ -28,7 +28,7 @@ Requires `bash` and `git`. Uses `gh` and `jq` if present, works without them.
 |---|---|
 | `hitl init [solo\|build\|client]` | Scaffold this repo. Additive — never overwrites, safe to re-run. |
 | `hitl packet <NN> <name>` | New slice packet from the template. |
-| `hitl slice <NN>` | Set the active packet. Drives the pre-commit gate. |
+| `hitl slice <NN>` | Set the active packet. Drives the pre-commit gate. Refuses a packet that still has `{{placeholders}}`; `--force` overrides. |
 | `hitl status` | Print exactly what an agent sees at session start. |
 
 ## Tiers
@@ -71,7 +71,8 @@ docs/method/
 ## The loop
 
 ```sh
-hitl packet 07 "confirmation page"   # write it by hand, fill allowed-files first
+hitl packet 07 "confirmation page"   # creates the file
+$EDITOR docs/method/packets/07-*.md  # <- the actual work, by hand
 hitl slice 07                        # arms the gate
 git checkout -b slice/07-confirmation
 # ... agent implements against the packet ...
