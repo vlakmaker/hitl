@@ -10,7 +10,10 @@
 
 set -uo pipefail
 
-HITL_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve through symlinks — hitl is normally invoked via ~/.local/bin/hitl,
+# where BASH_SOURCE is the symlink, not the script.
+HITL_SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+HITL_HOME="$(cd "$(dirname "$HITL_SELF")/.." && pwd)"
 RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'; BLD=$'\033[1m'; DIM=$'\033[2m'; OFF=$'\033[0m'
 
 die() { echo "${RED}✗ $*${OFF}" >&2; exit 1; }
