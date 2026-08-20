@@ -77,6 +77,10 @@ VIOLATIONS=()
 for f in "${STAGED[@]}"; do
   ok=0
   for pat in "${ALLOWED[@]}"; do
+    # Literal first. A Next.js route segment like [ref] is an ordinary
+    # directory name AND a bash character class, so glob-first rejects the
+    # exact path the packet listed while allowing three paths it did not.
+    if [[ "$f" == "$pat" ]]; then ok=1; break; fi
     # shellcheck disable=SC2053
     if [[ "$f" == $pat ]]; then ok=1; break; fi
     case "$pat" in */) [[ "$f" == "$pat"* ]] && { ok=1; break; } ;; esac
