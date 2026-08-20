@@ -10,20 +10,24 @@ three were in the enforcement layer and none had a test.
 
 ---
 
-## The gap that matters most: nothing is tested
+## ~~The gap that matters most: nothing is tested~~ — closed
 
-843 lines that install git hooks, append to `.gitignore`, and rewrite
-`.claude/settings.json` in someone else's repo — with no test suite and no CI.
-Every bug fixed below would have been caught by ten lines of `bats`. The third
-one was found by writing an example packet, which is a slower and less reliable
-test suite than a test suite.
+`tests/run.sh`, 62 cases, no dependencies the tool does not already have. Six
+of them cover bugs that actually shipped, and each was checked by reverting the
+fix and watching the right test go red — a test that has never failed is a
+claim, not a check.
 
-This is the sharpest contradiction in the method. `AGENTS.md` demands a
-verification command before any handoff; the tool that stamps `AGENTS.md` has
-none.
+Still open here:
 
-**In-path test:** a test suite is only in-path if it runs without being
-remembered. That means CI on push, not a script someone runs.
+- **CI is written but not running.** `.github/workflows/tests.yml` exists; the
+  suite is only in-path once it runs on push without anyone remembering it.
+- **The no-`jq` branch of `install_session_hook` is untested.** Testing it
+  needs a PATH sandbox that would be more fragile than the code it covers.
+- **The `gh`-dependent part of `session-start.sh` is untested.** It needs a
+  fake `gh` or a network. Low value either way.
+- **Nothing runs on macOS.** `realpath --relative-to` and `sed -i` are GNU
+  spellings; stock macOS has neither. This has never been run there, and the
+  README now says so rather than implying otherwise.
 
 ---
 
@@ -107,6 +111,10 @@ landmine that shipped inside an auto-loading file.
   of the method it received. `hitl update` can only diff against whatever
   `~/framework` happens to be at that moment, and a project cannot tell you it
   is behind.
+- **`python3` is an undeclared dependency.** `install_session_hook` shells out
+  to it to validate the generated `settings.json`, and when it is missing the
+  check fails open in the noisiest way: valid JSON gets reported as invalid.
+  The README now names it; the code should degrade rather than lie.
 - **No install path.** Install is two commands in the README and nothing more:
   no install script, no uninstall, and no check that `~/.local/bin` is actually
   on `PATH`. It shipped naming the wrong directory, which nothing would catch.
@@ -164,5 +172,6 @@ the gate rejected the exact path the packet allowed and accepted three paths it
 did not. Now the comparison is literal first, glob second. The looser half of
 that is still open, above.
 
-All three bugs lived in the enforcement layer. That is the argument for the
-first item on this list.
+All three bugs lived in the enforcement layer, which is the argument the first
+item on this list used to make. There is a suite there now, and these three are
+the cases it opens with.

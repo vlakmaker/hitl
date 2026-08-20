@@ -29,7 +29,21 @@ ln -s ~/hitl/bin/hitl ~/.local/bin/hitl
 Clone anywhere — the symlink is what matters, and `hitl` resolves it to find
 its own templates. `~/.local/bin` needs to be on your `PATH`.
 
-Requires `bash` and `git`. Uses `gh` and `jq` if present, works without them.
+Requires `bash`, `git`, and `python3` (used to check the generated
+`settings.json` is valid). Uses `gh` and `jq` if present, works without them.
+GNU coreutils are assumed — this has not been run on macOS.
+
+## Tests
+
+```sh
+tests/run.sh                 # everything, ~8s
+tests/run.sh test_gate.sh    # one file
+KEEP=1 tests/run.sh          # leave the temp repos behind
+```
+
+62 cases, no dependencies beyond the ones above: every test gets its own temp
+repo with global git config switched off. Six of them exist because the bug
+they describe actually shipped.
 
 ## Commands
 
