@@ -134,17 +134,45 @@ EOF
   echo "${DIM}Remotes disappear. Files in the repo do not.${OFF}"
 }
 
+# Where git will actually look for hooks. In a linked worktree `.git` is a file,
+# not a directory, so "$root/.git/hooks" is a write that fails — and the method
+# leans on worktrees for one-writer-per-file, so this path is normal, not exotic.
+# The common dir is shared, which means a worktree inherits the main checkout's
+# gate and needs no install of its own. core.hooksPath wins over both.
+hooks_dir() {
+  local root="$1" hp cdir
+  hp="$(git -C "$root" config --get core.hooksPath 2>/dev/null)"
+  if [ -n "$hp" ]; then
+    case "$hp" in /*) echo "$hp" ;; *) echo "$root/$hp" ;; esac
+    return
+  fi
+  cdir="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || cdir=".git"
+  case "$cdir" in /*) ;; *) cdir="$root/$cdir" ;; esac
+  echo "$cdir/hooks"
+}
+
 install_precommit() {
-  local hook="$1/.git/hooks/pre-commit"
+  local root="$1" dir hook show
+  dir="$(hooks_dir "$root")"
+  hook="$dir/pre-commit"
+  show="${hook#$root/}"
+  # Still absolute means the hooks dir is outside this checkout — i.e. we are in
+  # a worktree, sharing the main repo's gate. Say so, or it reads as a bug.
+  case "$show" in /*) show="$show — shared with the main checkout" ;; esac
   if [ -e "$hook" ] && grep -q 'hitl' "$hook" 2>/dev/null; then
-    echo "  ${DIM}skip   .git/hooks/pre-commit (gate installed)${OFF}"
+    echo "  ${DIM}skip   $show (gate installed)${OFF}"
   elif [ -e "$hook" ]; then
-    echo "  ${YEL}warn   .git/hooks/pre-commit exists — add manually:${OFF}"
+    echo "  ${YEL}warn   $show exists — add manually:${OFF}"
     echo "         ${DIM}exec \"\$(git rev-parse --show-toplevel)/.hitl/allowed-files.sh\"${OFF}"
-  else
-    printf '#!/usr/bin/env bash\nexec "$(git rev-parse --show-toplevel)/.hitl/allowed-files.sh"\n' > "$hook"
+  elif mkdir -p "$dir" 2>/dev/null &&
+       printf '#!/usr/bin/env bash\nexec "$(git rev-parse --show-toplevel)/.hitl/allowed-files.sh"\n' > "$hook" 2>/dev/null; then
     chmod +x "$hook"
-    echo "  ${GRN}create${OFF} .git/hooks/pre-commit ${DIM}(allowed-files gate)${OFF}"
+    echo "  ${GRN}create${OFF} $show ${DIM}(allowed-files gate)${OFF}"
+  else
+    # Reporting a create that did not happen is worse than no gate: you stop
+    # checking. Say it failed.
+    echo "  ${RED}✗ could not install the gate at $hook${OFF}"
+    echo "         ${DIM}install it by hand, or the packet's allowed list enforces nothing${OFF}"
   fi
 }
 
