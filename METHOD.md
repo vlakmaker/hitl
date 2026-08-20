@@ -1,7 +1,7 @@
 # The method
 
 What survived one paid client build, one dead memory server, and one abandoned
-memory skill. Written 2026-08-14, after archiving the client build.
+memory skill. Written 2026-08-14, after archiving that build.
 
 ---
 
