@@ -108,6 +108,11 @@ them. The only hand-written state is what no command can compute: who owns which
 file right now, and what is blocked on someone else. ~15 lines, not a document.
 
 ### Hours reconstructed after the argument, not before
+Any record you will need in an argument has to exist before the argument
+starts. Reconstruction always works, and is always too late. Hours are one
+instance of it; so are who asked for the scope change, when a decision was
+made and on what information, and what the state was before the incident.
+
 78 hours invoiced against 118–155 provable from commit timestamps. 13 working
 days never registered at all. The reconstruction worked perfectly — six weeks
 too late to change the conversation.
@@ -115,6 +120,13 @@ too late to change the conversation.
 → **`hitl-hours` runs weekly, not at invoice time.** Note the limit: git cannot
 see the four hours of architecture work that predate the first commit. The
 decision log can. Read both.
+
+That limit is the part that generalises past billing. Your measurement
+instrument is blind exactly where the most valuable work happens — thinking,
+scoping, deciding — and no tool fixes that, because there is nothing to
+measure. The second record has to be kept by hand, while it is happening. That
+is what `decision-log.md` is, and why its entries carry a `**Time:**` field
+whether or not anyone is invoicing.
 
 ### Client data in global scope
 `client-patterns.md` sat in `~/.claude/agent-memory/code-reviewer/`,
