@@ -5,7 +5,8 @@ build and stamped into new projects in one command.
 
 Not a framework. A convention plus about 300 lines of bash. The reasoning
 behind every part of it is in **[METHOD.md](METHOD.md)** — read that first if
-you want to know *why*, this file only covers *how*.
+you want to know *why*, this file only covers *how*. What it does not yet do,
+and where it contradicts itself, is in **[GAPS.md](GAPS.md)**.
 
 ```sh
 cd my-project
