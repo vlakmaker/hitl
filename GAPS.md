@@ -4,9 +4,9 @@ An audit of this repo against its own claims, 2026-08-20. Every item was
 checked against the code or reproduced in a throwaway repo — nothing here is
 inferred from reading the prose.
 
-Two bugs found in the audit are already fixed; they are listed under *Fixed*
-at the bottom, with what they cost, because the interesting part is that both
-were in the enforcement layer and neither had a test.
+Three bugs found in the audit are already fixed; they are listed under *Fixed*
+at the bottom, with what they cost, because the interesting part is that all
+three were in the enforcement layer and none had a test.
 
 ---
 
@@ -14,7 +14,9 @@ were in the enforcement layer and neither had a test.
 
 843 lines that install git hooks, append to `.gitignore`, and rewrite
 `.claude/settings.json` in someone else's repo — with no test suite and no CI.
-Both bugs fixed below would have been caught by ten lines of `bats`.
+Every bug fixed below would have been caught by ten lines of `bats`. The third
+one was found by writing an example packet, which is a slower and less reliable
+test suite than a test suite.
 
 This is the sharpest contradiction in the method. `AGENTS.md` demands a
 verification command before any handoff; the tool that stamps `AGENTS.md` has
@@ -85,6 +87,12 @@ allows `src/anything/nested/deep.ts`. That may be what you want, but the packet
 template says "one glob per line" and says nothing about this, so the list a
 human writes and the list the gate enforces can differ.
 
+A listed path is now compared literally before it is compared as a glob, which
+is what makes a Next.js segment like `src/app/booking/[ref]/page.tsx` work at
+all. The residual is still there: that same line is *also* tried as a glob, so
+`src/app/booking/r/page.tsx` would pass too. Closing it properly means deciding
+whether a packet line is a path or a pattern, and saying so in the template.
+
 ### Rule 4 is prose only
 `AGENTS.md` rule 4 — never commit a secret, a key, or a real customer record —
 is enforced by nothing. The allowed-files gate limits *where* a secret can
@@ -99,9 +107,9 @@ landmine that shipped inside an auto-loading file.
   of the method it received. `hitl update` can only diff against whatever
   `~/framework` happens to be at that moment, and a project cannot tell you it
   is behind.
-- **No install path.** The README's `ln -s ~/framework/bin/hitl ...` assumes the
-  repo is cloned to exactly `~/framework` and that `~/.local/bin` is on `PATH`.
-  No install script, no uninstall, no check.
+- **No install path.** Install is two commands in the README and nothing more:
+  no install script, no uninstall, and no check that `~/.local/bin` is actually
+  on `PATH`. It shipped naming the wrong directory, which nothing would catch.
 - **No LICENSE.** Now that this is public, its absence means all rights
   reserved by default — the opposite of the intent.
 - **Vendor neutrality is asserted, not shipped.** `AGENTS.md` is the source of
@@ -122,7 +130,7 @@ delete it.
 ## This repo does not use its own method
 
 No `AGENTS.md`, no `.hitl/`, no packets, no decision log. Every commit here was
-made outside the discipline the repo sells — including the two commits that
+made outside the discipline the repo sells — including the commits that
 introduced the bugs below. `hitl init build` on itself is the cheapest possible
 demonstration that the method survives contact with its own author.
 
@@ -148,5 +156,13 @@ one. Now the hooks directory is resolved through `core.hooksPath` and
 `--git-common-dir` (a worktree correctly inherits the main checkout's gate and
 says so), and a failed install reports failure instead of success.
 
-Both bugs lived in the enforcement layer. That is the argument for the first
-item on this list.
+**A bracketed path matched as a character class, never as itself.**
+The gate compared each staged file to the packet's list with bash `==`, which
+globs. `src/app/booking/[ref]/page.tsx` — an everyday Next.js dynamic route —
+is a valid filename and also a pattern meaning "one character from r, e, f", so
+the gate rejected the exact path the packet allowed and accepted three paths it
+did not. Now the comparison is literal first, glob second. The looser half of
+that is still open, above.
+
+All three bugs lived in the enforcement layer. That is the argument for the
+first item on this list.

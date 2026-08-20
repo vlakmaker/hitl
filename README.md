@@ -13,13 +13,21 @@ cd my-project
 hitl init build
 ```
 
+**[What a packet actually looks like](examples/07-confirmation-page.md)** —
+one real, filled-in one. It is the whole method in a single file; if you read
+nothing else here, read that.
+
 ---
 
 ## Install
 
 ```sh
-ln -s ~/framework/bin/hitl ~/.local/bin/hitl
+git clone https://github.com/vlakmaker/hitl ~/hitl
+ln -s ~/hitl/bin/hitl ~/.local/bin/hitl
 ```
+
+Clone anywhere — the symlink is what matters, and `hitl` resolves it to find
+its own templates. `~/.local/bin` needs to be on your `PATH`.
 
 Requires `bash` and `git`. Uses `gh` and `jq` if present, works without them.
 
@@ -31,6 +39,7 @@ Requires `bash` and `git`. Uses `gh` and `jq` if present, works without them.
 | `hitl packet <NN> <name>` | New slice packet from the template. |
 | `hitl slice <NN>` | Set the active packet. Drives the pre-commit gate. Refuses a packet that still has `{{placeholders}}`; `--force` overrides. |
 | `hitl status` | Print exactly what an agent sees at session start. |
+| `hitl update` | Refresh a stamped project's hooks from this repo. `--dry-run` to look first. |
 
 ## Tiers
 
@@ -74,6 +83,7 @@ docs/method/
 ```sh
 hitl packet 07 "confirmation page"   # creates the file
 $EDITOR docs/method/packets/07-*.md  # <- the actual work, by hand
+                                     #    (finished: examples/07-confirmation-page.md)
 hitl slice 07                        # arms the gate
 git checkout -b slice/07-confirmation
 # ... agent implements against the packet ...
