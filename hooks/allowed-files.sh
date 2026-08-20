@@ -66,7 +66,11 @@ fi
 # The implementer always owns its own handoff and the packet's review notes.
 ALLOWED+=("docs/method/handoffs/*" "$(realpath --relative-to="$ROOT" "$PACKET")")
 
-mapfile -t STAGED < <(git diff --cached --name-only --diff-filter=ACMR)
+# D is in the filter because deleting a file the packet never named is exactly
+# as out-of-scope as editing one, and --no-renames splits a rename into its
+# delete and its add — otherwise git reports only the destination and a file
+# can be moved out of the allowed list without the gate ever seeing it.
+mapfile -t STAGED < <(git diff --cached --name-only --no-renames --diff-filter=ACMRD)
 [ ${#STAGED[@]} -eq 0 ] && exit 0
 
 VIOLATIONS=()
